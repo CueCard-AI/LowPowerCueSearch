@@ -1,0 +1,65 @@
+---
+description: Docker build/swap/verify workflow — slow build, swap pattern, config.json in volume, verify after every swap
+globs: Dockerfile*,docker-compose*,entrypoint.sh
+alwaysApply: false
+---
+
+# Docker Ops
+
+The image (`vane-glm`) bundles Next.js + SearxNG. State (config, sqlite,
+uploads) lives in the `vane-data` volume at `/home/vane/data`.
+
+## Build is slow
+
+The `exporting layers` step takes ~10-30 min on Docker Desktop. Always
+background the build and notify on completion; don't block on it.
+
+```bash
+docker build -t vane-glm .
+```
+
+## Swap pattern
+
+Always stop + remove before re-run, and keep the volume name stable so
+config persists:
+
+```bash
+docker stop vane && docker rm vane
+docker run -d -p 4567:3000 -v vane-data:/home/vane/data --name vane vane-glm
+```
+
+If you change the port, only change the left side (`4567:3000`) — the
+container listens on 3000 internally.
+
+## config.json lives in the volume, not source
+
+Provider API keys (z.ai, Gemini) and model selections are in
+`/home/vane/data/config.json` inside the volume. Source code never
+contains keys. To edit:
+
+```bash
+docker stop vane
+docker cp vane:/home/vane/data/config.json /tmp/vane-config.json
+# edit /tmp/vane-config.json; recompute any changed provider's hash
+docker cp /tmp/vane-config.json vane:/home/vane/data/config.json
+docker start vane
+```
+
+A `docker rm` + `docker run` (with the same `-v vane-data` volume)
+preserves config across recreations. Only `docker volume rm vane-data`
+loses it.
+
+## Verify after every swap
+
+```bash
+docker ps --filter name=vane
+docker logs --tail 30 vane
+```
+
+Then hard-refresh the browser (Cmd+Shift+R) — cached JS masks new builds.
+Run a speed-mode query to confirm the pipeline before declaring done.
+
+## Entrypoint
+
+`entrypoint.sh` starts SearxNG then Vane. SearxNG init takes ~10-20s; the
+app isn't ready until you see `Ready on http://0.0.0.0:3000` in the logs.

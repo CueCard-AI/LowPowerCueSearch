@@ -1,82 +1,133 @@
-# How to Contribute to Vane
+# Contributing to LowPowerCueSearch (Vane fork)
 
-Thanks for your interest in contributing to Vane! Your help makes this project better. This guide explains how to contribute effectively.
+Thanks for contributing! This is a zero-cost, Perplexity-style AI search engine
+(GLM via z.ai + Gemini embeddings + self-hosted SearxNG). Before changing code,
+read [docs/ONBOARDING.md](docs/ONBOARDING.md) — it's the fastest orientation.
 
-Vane is a modern AI chat application with advanced search capabilities.
+## Project structure
 
-## Project Structure
-
-Vane's codebase is organized as follows:
-
-- **UI Components and Pages**:
-  - **Components (`src/components`)**: Reusable UI components.
-  - **Pages and Routes (`src/app`)**: Next.js app directory structure with page components.
-    - Main app routes include: home (`/`), chat (`/c`), discover (`/discover`), and library (`/library`).
-  - **API Routes (`src/app/api`)**: Server endpoints implemented with Next.js route handlers.
-- **Backend Logic (`src/lib`)**: Contains all the backend functionality including search, database, and API logic.
-  - The search system lives in `src/lib/agents/search`.
-  - The search pipeline is split into classification, research, widgets, and writing.
-  - Database functionality is in `src/lib/db`.
-  - Chat model and embedding model providers are in `src/lib/models/providers`, and models are loaded via `src/lib/models/registry.ts`.
-  - Prompt templates are in `src/lib/prompts`.
-  - SearXNG integration is in `src/lib/searxng.ts`.
-  - Upload search lives in `src/lib/uploads`.
+- **UI & routes** (`src/app`, `src/components`) — Next.js app directory + API
+  routes (`/api/chat`, `/api/search`, `/api/providers`).
+- **Search pipeline** (`src/lib/agents/search`) — classify → research → rerank →
+  scrape → write. The deep reference is
+  [docs/RESEARCH_PIPELINE.md](docs/RESEARCH_PIPELINE.md).
+  - `classifier.ts` decides whether research is needed and what runs.
+  - `researcher/` is the agentic tool-calling loop.
+  - `researcher/actions/search/baseSearch.ts` is the search/result algorithm
+    (rerank, domain cap, evidence retrieval, embeddings batching).
+  - `widgets/` runs structured widgets (weather, stock, calculation) in
+    parallel with research.
+- **Models** (`src/lib/models`) — providers + `modeModels.ts` (the hardcoded
+  mode→model map) + `registry.ts` (loaders).
+- **Prompts** (`src/lib/prompts/search`) — classifier, researcher (per-mode),
+  writer.
+- **SearxNG** (`src/lib/searxng.ts`) + **scraper** (`src/lib/scraper.ts`).
+- **DB** (`src/lib/db`) — sqlite via better-sqlite3 + drizzle.
+- **Uploads** (`src/lib/uploads`) — file ingest + embedding for personal search.
 
 ### Where to make changes
 
-If you are not sure where to start, use this section as a map.
+- **Search behavior / reasoning** → `src/lib/agents/search`.
+- **A search tool / capability** → `src/lib/agents/search/researcher/actions`
+  (registered in `actions/index.ts`).
+- **A widget** → `src/lib/agents/search/widgets`.
+- **A model provider** → `src/lib/models/providers` + wire into
+  `src/lib/models/providers/index.ts`.
+- **Mode → model mapping** → `src/lib/models/modeModels.ts`.
+- **SearxNG engines / timeouts** → `searxng/settings.yml`.
+- **Prompts** → `src/lib/prompts/search`.
 
-- **Search behavior and reasoning**
+## Fork-specific conventions
 
-  - `src/lib/agents/search` contains the core chat and search pipeline.
-  - `classifier.ts` decides whether research is needed and what should run.
-  - `researcher/` gathers information in the background.
+These are non-negotiable. The `.cursor/rules/` enforce most of them; the
+`quality-coding` skill has the full rationale.
 
-- **Add or change a search capability**
+1. **Zero-cost.** No paid APIs — SearxNG + Gemini free tier + GLM via z.ai only.
+   If a feature needs a paid service, flag it and propose a free alternative;
+   don't silently add the dependency.
+2. **No keys in source.** API keys live in `config.json` in the `vane-data`
+   volume. Never in `.ts`, `.env`, or the Dockerfile. See
+   [docs/RUNBOOK.md](docs/RUNBOOK.md) for the volume-edit workflow.
+3. **Mode-gate new features.** Speed budget is ~3 LLM calls total (classify +
+   1 research iter + writer). Any new LLM call in speed mode is a regression —
+   gate to balanced/quality.
+4. **Fence-tolerant `generateObject` on GLM.** GLM wraps JSON in ```json
+   fences; `.parse()` rejects them. The override in
+   `src/lib/models/providers/glm/glmLLM.ts` uses `.create()` +
+   `repairJson({ extractJson: true })` + `thinking: { type: 'disabled' }`. Keep
+   it. (For free-form outputs like the rerank list, use `generateText` + manual
+   parse instead.)
+5. **Fallbacks on every external call.** SearxNG / scrape / LLM / embeddings
+   all `try/catch` and degrade. The pipeline never hard-crashes on one stage.
+6. **No N+1 external calls.** Batch embeddings/API calls. Don't
+   `await Promise.all(arr.map(async x => await fetch(...)))` over a known set.
+7. **Reasoning trace stays.** `streamText` yields `reasoningChunk` (from
+   `delta.reasoning_content`). Don't strip it. Throttle `session.updateBlock`
+   in per-chunk loops (≥64 chars between emits) to avoid flooding the client.
 
-  - Research tools (web, academic, discussions, uploads, scraping) live in `src/lib/agents/search/researcher/actions`.
-  - Tools are registered in `src/lib/agents/search/researcher/actions/index.ts`.
+## Cursor skills & rules
 
-- **Add or change widgets**
+The repo ships agent guidance in `.cursor/`:
 
-  - Widgets live in `src/lib/agents/search/widgets`.
-  - Widgets run in parallel with research and show structured results in the UI.
+- **Skills** (`.cursor/skills/`): `ml-search-pipeline` (auto, pipeline
+  orientation), `quality-coding` (auto, anti-patterns + doc standards),
+  `documentation` (auto, ASCII diagram conventions), `vane-ops` (explicit,
+  Docker runbook).
+- **Rules** (`.cursor/rules/`): `zero-cost-constraint` (always),
+  `quality-coding` (always), `documentation` (always), plus file-scoped rules
+  for the research pipeline, GLM provider, SearxNG, and Docker ops.
 
-- **Model integrations**
+If you introduce a new invariant, add a rule. If you add a new operational
+workflow, add a skill. See [docs/INDEX.md](docs/INDEX.md) for the full list.
 
-  - Providers live in `src/lib/models/providers`.
-  - Add new providers there and wire them into the model registry so they show up in the app.
+## Before you ship (checklist)
 
-- **Architecture docs**
-  - High level overview: `docs/architecture/README.md`
-  - High level flow: `docs/architecture/WORKING.md`
+- [ ] `ReadLints` clean on edited files.
+- [ ] No new paid dependency.
+- [ ] Speed mode didn't gain an LLM round-trip.
+- [ ] Every new external call has a `try/catch` fallback.
+- [ ] No N+1 external calls — batched or parallelized.
+- [ ] **Pipeline/UI-flow change → update `docs/RESEARCH_PIPELINE.md` with an
+      ASCII diagram** of the new flow (not just prose).
+- [ ] Key/config change → in the volume, not source.
+- [ ] New model/provider → `modeModels.ts` or the provider's default list is in
+      sync with what the API actually serves (curl-verify, don't guess).
+- [ ] File-level header + JSDoc on new pipeline-public exports.
+- [ ] Run `npm run format:write` before committing.
 
-## API Documentation
+## Documentation requirement
 
-Vane includes API documentation for programmatic access.
+Any change that alters a **user-visible flow** (UI states, progress steps) or a
+**pipeline stage** must ship with a `docs/` update that includes an **ASCII
+diagram** of the new flow — not just prose. Diagrams use box-drawing chars,
+labeled arrows, code-fence wrapped, ≤ ~60 cols. See the `documentation` skill
+for conventions.
 
-- **Search API**: For detailed documentation, see `docs/API/SEARCH.md`.
+## Setting up your environment
 
-## Setting Up Your Environment
+```bash
+npm install
+npm run dev        # development (hot reload) on :3000
+# or
+npm run build && npm run start
+```
 
-Before diving into coding, setting up your local environment is key. Here's what you need to do:
+For Docker (recommended — bundles SearxNG):
 
-1. Run `npm install` to install all dependencies.
-2. Use `npm run dev` to start the application in development mode.
-3. Open http://localhost:3000 and complete the setup in the UI (API keys, models, search backend URL, etc.).
+```bash
+docker build -t vane-glm .
+docker run -d -p 4567:3000 -v vane-data:/home/vane/data --name vane-glm vane-glm
+```
 
-Database migrations are applied automatically on startup.
+See the [README](README.md) for full setup and [docs/RUNBOOK.md](docs/RUNBOOK.md)
+for the operational loop. Database migrations run automatically on startup.
 
-For full installation options (Docker and non Docker), see the installation guide in the repository README.
+## Coding practices
 
-**Please note**: Docker configurations are present for setting up production environments, whereas `npm run dev` is used for development purposes.
+1. Verify your change works (run a query in the affected mode(s)).
+2. Run `npm run format:write` before committing.
+3. Follow the `quality-coding` skill's anti-pattern catalog — don't reintroduce
+   bugs we already fixed (N+1 calls, `.parse()` on fences, reasoning-update
+   flood, bare-list rerank, residential-IP SearxNG assumptions).
 
-## Coding and Contribution Practices
-
-Before committing changes:
-
-1. Ensure that your code functions correctly by thorough testing.
-2. Always run `npm run format:write` to format your code according to the project's coding standards. This helps maintain consistency and code quality.
-3. We currently do not have a code of conduct, but it is in the works. In the meantime, please be mindful of how you engage with the project and its community.
-
-Following these steps will help maintain the integrity of Vane's codebase and facilitate a smoother integration of your valuable contributions. Thank you for your support and commitment to improving Vane.
+Thanks for helping keep this a fast, high-quality, zero-cost search engine.

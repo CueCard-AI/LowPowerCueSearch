@@ -1,0 +1,37 @@
+---
+description: Lightweight always-on coding invariants — no paid deps, no keys in source, fallbacks on external calls, no N+1 calls, no speed-mode LLM round-trips, ship pipeline changes with docs update
+alwaysApply: true
+---
+
+# Coding Invariants (always-on)
+
+These apply to every change. They are the lightweight, non-negotiable
+subset — see the `quality-coding` skill for the full design guidance and
+anti-pattern catalog.
+
+## Never
+
+- **No paid dependencies.** No Tavily/Exa/Cohere/OpenAI-API. SearxNG +
+  Gemini free tier + GLM via z.ai only. If a feature needs paid, flag it
+  and propose a free alternative. (See `zero-cost-constraint` rule.)
+- **No keys/secrets in source.** API keys live in `config.json` in the
+  `vane-data` volume. Never in `.ts`, `.env`, `Dockerfile`, or committed
+  config.
+- **No N+1 external calls.** Don't `await Promise.all(arr.map(async x =>
+  await fetch(...)))` over a known set — batch into one call where the API
+  supports arrays, or parallelize without per-item awaits.
+- **No new LLM round-trip in speed mode.** Speed budget is ~3 calls
+  (classify + 1 research iter + writer). Gate new LLM features to
+  balanced/quality.
+- **No `chat.completions.parse()` on GLM** — it strict-parses before
+  fence-repair runs. Use `.create()` + `repairJson({ extractJson: true })`.
+
+## Always
+
+- **`try/catch` every external call** (SearxNG, scrape, LLM, embeddings)
+  with a graceful fallback. The pipeline degrades, never hard-crashes.
+- **Ship pipeline changes with a `docs/RESEARCH_PIPELINE.md` update** in
+  the same change (algorithm catalog, flow, or tuning-knobs table).
+- **Keep `modeModels.ts` / provider default model lists in sync** with
+  what the API actually serves — verify with a curl when adding a model.
+- **File-level header + JSDoc** on new pipeline-public modules/exports.

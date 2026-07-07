@@ -1,0 +1,52 @@
+---
+description: SearxNG configuration — engine allowlist, max_request_timeout, residential-IP reality, direct testing
+globs: searxng/**
+alwaysApply: false
+---
+
+# SearxNG Config
+
+`searxng/settings.yml` is baked into the image at build time (and
+live-editable at `/etc/searxng/settings.yml` in the container).
+
+## Engine allowlist
+
+Enabled: `google`, `brave` (SearxNG's scraper, NOT the paid API),
+`wikipedia`, `duckduckgo`, `wolframalpha`.
+
+Disabled (captcha-prone / garbage from residential IP): `bing`,
+`bing news`, `bing images`, `bing videos`, `startpage`, `qwant`,
+`mojeek`.
+
+## Timeout
+
+`search.max_request_timeout: 6.0` — caps how long SearxNG waits for slow
+engines. Google + brave respond fast; slow failing engines get cut off
+sooner. Don't raise this aggressively — it just makes queries wait on
+engines that return nothing.
+
+Also: `src/lib/searxng.ts` has a client-side `25000`ms abort. If you
+raise the engine timeout, keep the client timeout above it.
+
+## Residential-IP reality
+
+From a residential IP, most engines get captcha'd or rate-limited. Google
+is the most reliable but can still `429` under heavy use (recovers in
+~3 min). Don't assume a failing engine is a config bug — test it
+directly:
+
+```bash
+docker exec vane sh -c \
+  "curl -s -m 15 'http://localhost:8080/search?q=test&format=json&engines=google,brave' \
+   -H 'X-Forwarded-For: 1.2.3.4'"
+```
+
+If search reliability is insufficient, the zero-cost fix is to host
+SearxNG on a free-cloud VM (Oracle Cloud Free Tier / Fly.io free) with a
+datacenter IP and point `search.searxngURL` in `config.json` at it. Do
+not switch to a paid search API.
+
+## JSON format must stay enabled
+
+`search.formats` must include `json` — Vane queries SearxNG with
+`format=json`. Don't remove it.

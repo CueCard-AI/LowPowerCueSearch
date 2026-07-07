@@ -9,6 +9,7 @@ import db from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { chats } from '@/lib/db/schema';
 import UploadManager from '@/lib/uploads/manager';
+import { getModeModelRef, EMBEDDING_MODEL } from '@/lib/models/modeModels';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -127,11 +128,13 @@ export const POST = async (req: Request) => {
 
     const registry = new ModelRegistry();
 
+    const modeModelRef = getModeModelRef(body.optimizationMode);
+
     const [llm, embedding] = await Promise.all([
-      registry.loadChatModel(body.chatModel.providerId, body.chatModel.key),
-      registry.loadEmbeddingModel(
-        body.embeddingModel.providerId,
-        body.embeddingModel.key,
+      registry.loadChatModelByType(modeModelRef.providerType, modeModelRef.key),
+      registry.loadEmbeddingModelByType(
+        EMBEDDING_MODEL.providerType,
+        EMBEDDING_MODEL.key,
       ),
     ]);
 
@@ -155,58 +158,69 @@ export const POST = async (req: Request) => {
     const responseStream = new TransformStream();
     const writer = responseStream.writable.getWriter();
     const encoder = new TextEncoder();
+    let streamClosed = false;
+
+    const safeWrite = (chunk: string) => {
+      if (streamClosed) return;
+      try {
+        writer.write(encoder.encode(chunk));
+      } catch {
+        // Writer may be closed (e.g. client aborted). Mark closed and stop
+        // further writes to avoid a cascade of transformAlgorithm errors.
+        streamClosed = true;
+      }
+    };
+
+    const closeStream = () => {
+      if (streamClosed) return;
+      streamClosed = true;
+      try {
+        writer.close();
+      } catch {
+        // already closed
+      }
+      session.removeAllListeners();
+    };
 
     const disconnect = session.subscribe((event: string, data: any) => {
       if (event === 'data') {
         if (data.type === 'block') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'block',
-                block: data.block,
-              }) + '\n',
-            ),
+          safeWrite(
+            JSON.stringify({
+              type: 'block',
+              block: data.block,
+            }) + '\n',
           );
         } else if (data.type === 'updateBlock') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'updateBlock',
-                blockId: data.blockId,
-                patch: data.patch,
-              }) + '\n',
-            ),
+          safeWrite(
+            JSON.stringify({
+              type: 'updateBlock',
+              blockId: data.blockId,
+              patch: data.patch,
+            }) + '\n',
           );
         } else if (data.type === 'researchComplete') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'researchComplete',
-              }) + '\n',
-            ),
+          safeWrite(
+            JSON.stringify({
+              type: 'researchComplete',
+            }) + '\n',
           );
         }
       } else if (event === 'end') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'messageEnd',
-            }) + '\n',
-          ),
+        safeWrite(
+          JSON.stringify({
+            type: 'messageEnd',
+          }) + '\n',
         );
-        writer.close();
-        session.removeAllListeners();
+        closeStream();
       } else if (event === 'error') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'error',
-              data: data.data,
-            }) + '\n',
-          ),
+        safeWrite(
+          JSON.stringify({
+            type: 'error',
+            data: data.data,
+          }) + '\n',
         );
-        writer.close();
-        session.removeAllListeners();
+        closeStream();
       }
     });
 
@@ -234,7 +248,7 @@ export const POST = async (req: Request) => {
 
     req.signal.addEventListener('abort', () => {
       disconnect();
-      writer.close();
+      closeStream();
     });
 
     return new Response(responseStream.readable, {

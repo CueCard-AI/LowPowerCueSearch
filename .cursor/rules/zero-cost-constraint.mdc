@@ -1,0 +1,37 @@
+---
+description: Zero paid services — SearxNG only for search, Gemini free-tier for embeddings, GLM via z.ai for chat. Never wire paid APIs.
+alwaysApply: true
+---
+
+# Zero-Cost Constraint
+
+This project is a zero-cost Perplexity-style engine. No paid services.
+
+## Allowed (free)
+
+- **Web search**: SearxNG (self-hosted in the container). Only SearxNG.
+- **Embeddings**: Gemini `gemini-embedding-001` via Google AI Studio free
+  tier (OpenAI-compatible endpoint).
+- **Chat / research / writer LLM**: GLM models via z.ai
+  (`https://api.z.ai/api/coding/paas/v4`) using the user's Coding Plan key.
+- **Scraping**: Playwright + `@mozilla/readability` (in-process).
+
+## Never wire these
+
+- Tavily, Exa, SerpAPI, Brave Search **API** (paid) — note: SearxNG's
+  built-in `brave` scraper engine is fine, that's not the paid API.
+- Cohere Rerank or any paid reranker.
+- OpenAI API for chat or embeddings.
+- Any other paid LLM/search/embedding/rerank service.
+
+## If a feature needs a paid service
+
+Stop. Flag it to the user explicitly. Propose a free alternative (a
+code-only algorithmic improvement, a free-tier service, or a local model).
+Do not silently add a paid dependency.
+
+## Keys
+
+API keys (z.ai, Gemini) live in `config.json` inside the `vane-data`
+volume — never in source files, env files committed to git, or the
+Dockerfile. See the `vane-ops` skill for the volume-edit workflow.

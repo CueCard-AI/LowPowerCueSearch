@@ -47,12 +47,18 @@ type ToolCall = {
   id: string;
   name: string;
   arguments: Record<string, any>;
+  // Gemini-specific: required to round-trip tool calls back to the model
+  // (Gemini's OpenAI-compat endpoint rejects assistant tool_calls without the
+  // thought_signature that was returned on the streaming delta). See
+  // https://ai.google.dev/gemini-api/docs/thought-signatures
+  thoughtSignature?: string;
 };
 
 type GenerateTextInput = {
   messages: Message[];
   tools?: Tool[];
   options?: GenerateOptions;
+  disableThinking?: boolean;
 };
 
 type GenerateTextOutput = {
@@ -64,6 +70,7 @@ type GenerateTextOutput = {
 type StreamTextOutput = {
   contentChunk: string;
   toolCallChunk: ToolCall[];
+  reasoningChunk?: string;
   additionalInfo?: Record<string, any>;
   done?: boolean;
 };

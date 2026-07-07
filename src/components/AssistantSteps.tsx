@@ -76,6 +76,15 @@ const AssistantSteps = ({
 
   if (!block || block.data.subSteps.length === 0) return null;
 
+  const isActive = loading && !researchEnded && isLast && status === 'answering';
+  const lastStep = block.data.subSteps[block.data.subSteps.length - 1];
+  const liveStatus = lastStep
+    ? getStepTitle(lastStep, true)
+    : 'Researching…';
+  const progressPct = researchEnded
+    ? 100
+    : Math.min(95, block.data.subSteps.length * 12);
+
   return (
     <div className="rounded-lg bg-light-secondary dark:bg-dark-secondary border border-light-200 dark:border-dark-200 overflow-hidden">
       <button
@@ -95,6 +104,27 @@ const AssistantSteps = ({
           <ChevronDown className="w-4 h-4 text-black/70 dark:text-white/70" />
         )}
       </button>
+
+      {isActive && (
+        <div className="px-3 pb-2.5 pt-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-black/70 dark:text-white/70 truncate pr-2">
+              {liveStatus}
+            </span>
+            <span className="text-xs text-black/50 dark:text-white/50 tabular-nums">
+              {progressPct}%
+            </span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-light-200 dark:bg-dark-200 overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-sky-500"
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPct}%` }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {isExpanded && (

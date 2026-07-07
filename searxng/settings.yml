@@ -8,6 +8,7 @@ search:
   formats:
     - html
     - json
+  max_request_timeout: 6.0
 
 server:
   secret_key: 'a2fb23f1b02e6ee83875b09826990de0f6bd908b6638e8c10277d415f6ab852b' # Is overwritten by ${SEARXNG_SECRET}
@@ -15,3 +16,23 @@ server:
 engines:
   - name: wolframalpha
     disabled: false
+  - name: google
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: true
+  - name: bing news
+    disabled: true
+  - name: bing images
+    disabled: true
+  - name: bing videos
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: mojeek
+    disabled: true

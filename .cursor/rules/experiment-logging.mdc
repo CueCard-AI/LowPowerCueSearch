@@ -1,0 +1,36 @@
+---
+description: Every shipped or reverted experiment in docs/RESEARCH_LOG.md must include a measurement bar chart + status badge + TL;DR — not just prose numbers.
+alwaysApply: true
+---
+
+# Experiment Logging Invariant (always-on)
+
+Every experiment entry in `docs/RESEARCH_LOG.md` that is **shipped** or
+**reverted** (or `building`/`blocked`) must include:
+
+1. **A status badge** — `SHIPPED ✅` / `REVERTED ❌` / `BUILDING 🔧` /
+   `BLOCKED 🚧` — in the heading.
+2. **A one-line TL;DR** with the headline number.
+3. **A measurement bar chart** — scaled `█` bars with absolute numbers + a
+   `~Nx faster` / `regressed` / `unchanged` annotation. Prose-only numbers
+   ("14397ms vs 120ms") do **not** count — the comparison must be visible.
+
+Pure ideas (not yet tried) use the idea-entry format (paper / plug-in /
+expected delta / status: `idea`) and don't need a chart.
+
+## Why
+
+The experiment log is the most-consulted doc over time. A reader should get
+the outcome from the badge + TL;DR + bar chart alone, without reading prose.
+Prose-only entries bury the headline and make the log unscannable.
+
+## Complements, doesn't duplicate
+
+The `documentation` rule covers flow/pipeline changes (need an ASCII diagram
+of the new flow). This rule covers **experiment result entries** (need a
+measurement bar chart). An experiment that changes the pipeline ships both:
+the before/after pipeline diagram (documentation rule) AND the measurement
+bar chart (this rule).
+
+See the `experiment-logging` skill for the full card format + bar-chart
+conventions.

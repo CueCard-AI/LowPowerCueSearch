@@ -1,0 +1,50 @@
+---
+description: GLM (z.ai) provider specifics — thinking-disabled generateObject, fence-tolerant JSON parsing, model list sync, coding endpoint
+globs: src/lib/models/providers/glm/**
+alwaysApply: false
+---
+
+# GLM Provider (z.ai)
+
+## Endpoints
+
+- General: `https://api.z.ai/api/paas/v4`
+- Coding Plan: `https://api.z.ai/api/coding/paas/v4` — required for
+  `glm-5.2`. The default in `index.ts` is the general endpoint; the
+  active connection's `baseURL` is set in `config.json`.
+
+## `generateObject` must disable thinking + tolerate fences
+
+GLM-5.2 wraps JSON in ```json fences. The OpenAI SDK's
+`chat.completions.parse()` strict-parses internally and rejects fences
+before any repair logic runs. So `glmLLM.ts` overrides `generateObject`
+to:
+
+- use `chat.completions.create` (returns raw content), not `.parse()`
+- inject `thinking: { type: 'disabled' }` — the classifier, widgets, and
+  the LLM-as-judge reranker don't need to reason; this keeps them fast
+- run `repairJson(content, { extractJson: true })` then `JSON.parse`
+- validate with `input.schema.parse(...)`
+
+Keep this override. Any new structured-output call on GLM goes through it.
+
+## Model list must match z.ai
+
+z.ai serves: `glm-4.5`, `glm-4.5-air`, `glm-4.6`, `glm-4.7`, `glm-5`,
+`glm-5-turbo`, `glm-5.1`, `glm-5.2`. `defaultChatModels` in `index.ts`
+must stay synced to this list. Do not list `glm-4-flash`, `glm-4-plus`,
+`embedding-3`, etc. — they return `1211 Unknown Model` on z.ai.
+
+The `[1m]` suffix (e.g. `glm-5.2[1m]`) is a Claude-Code-specific alias,
+not a valid raw API model id — don't use it here.
+
+## z.ai has no embeddings
+
+Never point the GLM provider at an embedding model. Embeddings go through
+Gemini (see `modeModels.ts` `EMBEDDING_MODEL`).
+
+## `streamText` reasoning
+
+GLM-5.2 streams `delta.reasoning_content`. `OpenAILLM.streamText`
+(inherited) captures it as `reasoningChunk`. Don't strip it — the UI
+research trace depends on it.

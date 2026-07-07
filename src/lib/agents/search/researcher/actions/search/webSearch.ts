@@ -11,7 +11,7 @@ const actionSchema = z.object({
 });
 
 const speedModePrompt = `
-Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 3 queries at a time. You will have to use this every single time if this is present and relevant.
+Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 5 queries at a time. You will have to use this every single time if this is present and relevant.
 You are currently on speed mode, meaning you would only get to call this tool once. Make sure to prioritize the most important queries that are likely to get you the needed information in one go.
 
 Your queries should be very targeted and specific to the information you need, avoid broad or generic queries.
@@ -19,12 +19,12 @@ Your queries shouldn't be sentences but rather keywords that are SEO friendly an
 
 For example, if the user is asking about the features of a new technology, you might use queries like "GPT-5.1 features", "GPT-5.1 release date", "GPT-5.1 improvements" rather than a broad query like "Tell me about GPT-5.1".
 
-You can search for 3 queries in one go, make sure to utilize all 3 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
+You can search for 5 queries in one go, make sure to utilize all 5 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
 If this tool is present and no other tools are more relevant, you MUST use this tool to get the needed information.
 `;
 
 const balancedModePrompt = `
-Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 3 queries at a time. You will have to use this every single time if this is present and relevant.
+Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 5 queries at a time. You will have to use this every single time if this is present and relevant.
 
 You can call this tool several times if needed to gather enough information.
 Start initially with broader queries to get an overview, then narrow down with more specific queries based on the results you receive.
@@ -39,12 +39,12 @@ For example if the user is asking about Tesla, your actions should be like:
 5. __reasoning_preamble "I have gathered enough information to provide a comprehensive answer."
 6. done.
 
-You can search for 3 queries in one go, make sure to utilize all 3 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
+You can search for 5 queries in one go, make sure to utilize all 5 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
 If this tool is present and no other tools are more relevant, you MUST use this tool to get the needed information. You can call this tools, multiple times as needed.
 `;
 
 const qualityModePrompt = `
-Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 3 queries at a time. You will have to use this every single time if this is present and relevant.
+Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 5 queries at a time. You will have to use this every single time if this is present and relevant.
 
 You have to call this tool several times to gather enough information unless the question is very simple (like greeting questions or basic facts).
 Start initially with broader queries to get an overview, then narrow down with more specific queries based on the results you receive.
@@ -52,7 +52,7 @@ Never stop before at least 5-6 iterations of searches unless the user question i
 
 Your queries shouldn't be sentences but rather keywords that are SEO friendly and can be used to search the web for information.
 
-You can search for 3 queries in one go, make sure to utilize all 3 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
+You can search for 5 queries in one go, make sure to utilize all 5 queries to maximize the information you can gather. If a question is simple, then split your queries to cover different aspects or related topics to get a comprehensive understanding.
 If this tool is present and no other tools are more relevant, you MUST use this tool to get the needed information. You can call this tools, multiple times as needed.
 `;
 
@@ -60,7 +60,7 @@ const webSearchAction: ResearchAction<typeof actionSchema> = {
   name: 'web_search',
   schema: actionSchema,
   getToolDescription: () =>
-    "Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 3 queries at a time. You will have to use this every single time if this is present and relevant.",
+    "Use this tool to perform web searches based on the provided queries. This is useful when you need to gather information from the web to answer the user's questions. You can provide up to 5 queries at a time. You will have to use this every single time if this is present and relevant.",
   getDescription: (config) => {
     let prompt = '';
 
@@ -85,9 +85,12 @@ const webSearchAction: ResearchAction<typeof actionSchema> = {
     config.sources.includes('web') &&
     config.classification.classification.skipSearch === false,
   execute: async (input, additionalConfig) => {
+    // Reduce queries for balanced mode (5→3) to cut SearxNG latency.
+    // Quality keeps 5 for recall. Speed uses the Search-o1 writer (not this).
+    const maxQueries = additionalConfig.mode === 'balanced' ? 3 : 5;
     input.queries = (
       Array.isArray(input.queries) ? input.queries : [input.queries]
-    ).slice(0, 3);
+    ).slice(0, maxQueries);
 
     const researchBlock = additionalConfig.session.getBlock(
       additionalConfig.researchBlockId,

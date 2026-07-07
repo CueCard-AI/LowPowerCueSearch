@@ -160,28 +160,60 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
 
     let recievedToolCalls: { name: string; id: string; arguments: string }[] =
       [];
+    // Gemini streams a `thought_signature` per tool call (under
+    // delta.tool_calls[].extra_content.google.thought_signature) that must be
+    // sent back on the assistant message when continuing the conversation.
+    // Track it per tool-call index so we can attach it to the yielded ToolCall.
+    const thoughtSignatures: Record<number, string> = {};
 
     for await (const chunk of stream) {
       if (chunk.choices && chunk.choices.length > 0) {
         const toolCalls = chunk.choices[0].delta.tool_calls;
+        const reasoningContent = (
+          chunk.choices[0].delta as any
+        )?.reasoning_content as string | undefined;
+
+        if (toolCalls) {
+          for (const tc of toolCalls) {
+            const raw = tc as any;
+            const sig =
+              raw?.extra_content?.google?.thought_signature ??
+              raw?.function?.extra_content?.google?.thought_signature;
+            const idx =
+              raw.index != null ? raw.index : recievedToolCalls.length;
+            if (sig) {
+              thoughtSignatures[idx] = sig;
+            }
+          }
+        }
+
         yield {
           contentChunk: chunk.choices[0].delta.content || '',
+          reasoningChunk: reasoningContent || '',
           toolCallChunk:
             toolCalls?.map((tc) => {
-              if (!recievedToolCalls[tc.index]) {
+              const raw = tc as any;
+              const idx =
+                raw.index != null ? raw.index : recievedToolCalls.length;
+              if (!recievedToolCalls[idx]) {
                 const call = {
                   name: tc.function?.name!,
                   id: tc.id!,
                   arguments: tc.function?.arguments || '',
                 };
-                recievedToolCalls.push(call);
-                return { ...call, arguments: parse(call.arguments || '{}') };
+                recievedToolCalls[idx] = call;
+                return {
+                  ...call,
+                  arguments: parse(call.arguments || '{}'),
+                  thoughtSignature: thoughtSignatures[idx],
+                };
               } else {
-                const existingCall = recievedToolCalls[tc.index];
+                const existingCall = recievedToolCalls[idx];
                 existingCall.arguments += tc.function?.arguments || '';
                 return {
                   ...existingCall,
                   arguments: parse(existingCall.arguments),
+                  thoughtSignature: thoughtSignatures[idx],
                 };
               }
             }) || [],

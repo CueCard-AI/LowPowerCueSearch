@@ -119,6 +119,12 @@ const getBalancedPrompt = (
   Do not spam searches—pick the most targeted queries.
   </core_principle>
 
+  <multi_hop_chaining>
+  Many questions require following a chain of evidence across searches. If a search returns a candidate entity (a person's name, a company, a product, a term) that is central to answering the question, search that entity directly in the next step to gather dedicated information about it before answering.
+  Example: "Who is the CEO of Retina Robotics?" -> search "Retina Robotics CEO" -> results mention "Maanav Iyengar" -> search "Maanav Iyengar Retina Robotics" to confirm and gather details -> done.
+  Do not answer from a single half-mention; pursue the candidate entity to confirm and enrich.
+  </multi_hop_chaining>
+
   <done_usage>
   Call done only after the reasoning plus the necessary tool calls are completed and you have enough to answer. If you call done early, stop. If you reach the tool cap, call done to conclude.
   </done_usage>
@@ -278,6 +284,12 @@ const getQualityPrompt = (
   6. **Use cases** - How is it being used?
   7. **Limitations/critiques** - What are the downsides?
   </research_strategy>
+
+  <multi_hop_chaining>
+  Many questions require following a chain of evidence across searches. If a search returns a candidate entity (a person's name, a company, a product, a term) that is central to answering the question, search that entity directly in the next step to gather dedicated information about it before answering.
+  Example: "Who is the CEO of Retina Robotics?" -> search "Retina Robotics CEO" -> results mention "Maanav Iyengar" -> search "Maanav Iyengar Retina Robotics" to confirm and gather details -> done.
+  Do not answer from a single half-mention; pursue the candidate entity to confirm and enrich. Cross-reference findings across multiple searches before concluding.
+  </multi_hop_chaining>
 
   <mistakes_to_avoid>
 

@@ -4,6 +4,7 @@ import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
 import { SearchSources } from '@/lib/agents/search/types';
 import APISearchAgent from '@/lib/agents/search/api';
+import { getModeModelRef, EMBEDDING_MODEL } from '@/lib/models/modeModels';
 
 interface ChatRequestBody {
   optimizationMode: 'speed' | 'balanced' | 'quality';
@@ -33,11 +34,13 @@ export const POST = async (req: Request) => {
 
     const registry = new ModelRegistry();
 
+    const modeModelRef = getModeModelRef(body.optimizationMode);
+
     const [llm, embeddings] = await Promise.all([
-      registry.loadChatModel(body.chatModel.providerId, body.chatModel.key),
-      registry.loadEmbeddingModel(
-        body.embeddingModel.providerId,
-        body.embeddingModel.key,
+      registry.loadChatModelByType(modeModelRef.providerType, modeModelRef.key),
+      registry.loadEmbeddingModelByType(
+        EMBEDDING_MODEL.providerType,
+        EMBEDDING_MODEL.key,
       ),
     ]);
 

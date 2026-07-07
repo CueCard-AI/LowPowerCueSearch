@@ -1,0 +1,146 @@
+---
+description: Research pipeline architecture invariants and speed/quality tradeoff preservation for src/lib/agents/search/**
+globs: src/lib/agents/search/**
+alwaysApply: false
+---
+
+# Research Pipeline Invariants
+
+This directory implements the query → cited-answer pipeline. Preserve
+these invariants when modifying any file here.
+
+## Mode → model is hardcoded
+
+Model selection is driven by `src/lib/models/modeModels.ts` + the
+optimization mode, NOT by client-supplied `chatModel`/`embeddingModel`.
+The chat + search routes call `loadChatModelByType` /
+`loadEmbeddingModelByType`. Do not re-introduce per-request user model
+selection for the pipeline.
+
+Embeddings are always Gemini (`gemini-embedding-001`). z.ai does not serve
+GLM embeddings — never substitute a GLM embedding model.
+
+## Speed vs quality is the core tradeoff
+
+- **speed**: ~3 LLM calls total budget (classify + 1 research iter +
+  writer). No scraping, no per-chunk extraction, no extra LLM round-trips.
+  Any added LLM call in speed mode is a regression.
+- **balanced**: scraping top 3 + evidence retrieval is allowed; gap
+  analysis runs once.
+- **quality**: deep research, per-chunk extraction, multi-hop, gap
+  analysis all allowed.
+
+When adding a feature, gate it by mode and count the LLM round-trips it
+adds in speed mode. If it adds one in speed mode, don't ship it there.
+
+## `generateObject` on GLM must be fence-tolerant + thinking-disabled
+
+The GLM provider's `generateObject` override injects
+`thinking: { type: 'disabled' }` and uses `chat.completions.create` +
+`repairJson({ extractJson: true })` (GLM wraps JSON in ```json fences).
+Any new `generateObject` call goes through this override automatically —
+do not bypass it with `.parse()`.
+
+## Writer uses the mode-appropriate llm
+
+`input.config.llm` is the single LLM for classifier, widgets, researcher,
+reranker, and writer. Do not load a separate writer model unless you
+extend `modeModels.ts` with a role-based map.
+
+## Reasoning trace
+
+`streamText` yields `reasoningChunk` (from `delta.reasoning_content`).
+The researcher loop and the writer surface it as `reasoning` subSteps.
+Non-reasoning models (speed/balanced) emit empty `reasoningChunk` — that's
+expected; don't error on it.
+
+## Reranker is the local cross-encoder with an LLM fallback (S1)
+
+The rerank step in `baseSearch.ts` calls `reranker.rerank(...)` from
+`src/lib/reranker/index.ts`. Primary path = local CPU cross-encoder
+(`Xenova/ms-marco-MiniLM-L-6-v2`, bundled in the image). Fallback =
+`llmRerankFallback` (the LLM-as-judge `generateText` path). Do **not** remove
+the fallback — it's resilience (model fails to load / OOM / bundle missing),
+not just warmup. The singleton is shared via `globalThis` so the
+`instrumentation.ts` prewarm and route handlers use one instance; don't
+revert that or the cross-encoder won't be used (learned the hard way).
+
+## Search-o1 speed mode: writer IS the researcher (Build 3.5)
+
+Speed mode uses a **single-stream writer** with tools (`web_search` +
+`trigger_weather/stock/calculation`) instead of the 3-call pipeline (classify
+→ researcher → writer). The writer reasons → calls `web_search` → gets
+results → writes the answer. 1-2 LLM calls. Balanced/quality keep the full
+pipeline. Do **not** re-add the classifier or researcher to speed mode —
+the writer handles skipSearch (answers directly if it knows), widget triggers
+(calls widget tools), and query generation (prompt includes SEO-friendly
+query instructions) naturally. See `src/lib/agents/search/searchWriter.ts`.
+Thinking is **disabled** on the answer-generation call (2nd streamText) —
+keep this or answer generation takes ~39s instead of ~11s.
+
+## Speed mode does not trade robustness for speed (invariant)
+
+Speed wins come from **parallelism, CPU work (the cross-encoder), caching,
+and better algorithms (RRF, context capping)** — never from:
+- dropping the LLM classifier (keep it; use parallelism to hide latency),
+- weakening dedup (keep embedding-based dedup; URL-only leaks near-dups),
+- reducing engine diversity (keep the multi-engine SearxNG allowlist;
+  single-engine = fragility if that engine rate-limits/captchas).
+
+Rejected ideas (do not re-propose for speed mode): S12 (google-only SearxNG),
+S7 (heuristic classifier), S8-dedup (URL-only dedup). See
+`docs/RESEARCH_LOG.md` "Speed-mode-specific ideas".
+
+## Gemini for structured outputs, GLM for prose (E1 pattern)
+
+Structured-output tasks (`generateObject` — KB construction, and potentially
+classifier/gap-analysis/widgets) should use **Gemini** (e.g. `gemini-3.1-flash-lite`),
+not GLM. Google's API enforces `response_format: json_schema` strictly (100%
+reliable), while z.ai doesn't (~50% with GLM — returns markdown or mismatched
+JSON). Prose tasks (`streamText`/`generateText` — the writer, the researcher
+reasoning) use GLM. Both are zero-cost (free tiers). The Gemini model is
+cached via `globalThis` in `src/lib/agents/search/index.ts` (`getGeminiKbModel`).
+See `docs/RESEARCH_LOG.md` E1 for the measurement.
+
+**Speed mode is an exception:** since Build 6 the speed-mode chat model is
+`gemini-3.1-flash-lite` (throughput/concurrency for `/api/enrich`), not GLM.
+Flash Lite is a non-thinking model, so speed mode emits **no** `reasoning`
+trace (the UI "Thinking" step and the `reasoning` array in `/api/enrich`
+are empty). Balanced/quality still use GLM and still emit reasoning.
+
+## Gemini tool calls require thought_signature round-trip
+
+When the speed-mode writer (Gemini) makes a tool call and we feed the
+result back, the assistant message **must** carry the `thought_signature`
+that Gemini returned on the streaming delta — or the API returns
+`400: Function call is missing a thought_signature in functionCall parts`.
+The signature is captured in `OpenAILLM.streamText`
+(`delta.tool_calls[].extra_content.google.thought_signature`; Gemini sends
+`index: null` so we bucket by `recievedToolCalls.length`), stored on
+`ToolCall.thoughtSignature`, and re-attached by `GeminiLLM.convertToOpenAIMessages`
+as `extra_content.google.thought_signature`. Any new code path that does
+Gemini tool-call round-trips must propagate `thoughtSignature` through the
+assistant message it pushes back. GLM does not need this.
+
+## BATS harness: code arbiter + prompt influencer (Build 5)
+
+The researcher loop has a **code-enforced budget** (the arbiter) + an
+**informational prompt injection** (the influencer). The code guarantees the
+time bound; the prompt helps the model plan within it.
+
+- **Code arbiter:** `maxIteration` (balanced 3, quality 10) + dynamic tool
+  removal on the last iteration (search tools filtered out → model can only
+  call `done`). Code-enforced — can't be bypassed.
+- **Prompt influencer:** `<research_status>` block injected each iteration
+  (remaining calls + gathered summary). Informational — if the model ignores
+  it, the code still bounds the time.
+- **Queries per web_search:** balanced 3 (was 5).
+
+Do **not** make the budget prompt-only (flaky — the model might ignore it).
+The code arbiter is what guarantees the bound. See `docs/RESEARCH_LOG.md`
+BATS harness entry for the design discussion.
+
+## Deep reference
+
+See `docs/RESEARCH_PIPELINE.md` for the full pipeline, algorithm catalog,
+and tuning knobs.

@@ -1,0 +1,38 @@
+---
+description: Pipeline/UI-flow changes must ship with a docs update that includes an ASCII diagram of the new flow, not just prose
+alwaysApply: true
+---
+
+# Documentation Invariant (always-on)
+
+Any change that alters a **user-visible flow** (UI states, progress steps,
+new screens) or a **pipeline stage** (search/answer/research/classify/
+writer logic) must ship with a `docs/` update that includes an **ASCII
+diagram** of the new flow — not just prose.
+
+## Requirements
+
+- **Diagram the flow.** Use box-drawing chars (`┌ ┐ └ ┘ ├ ┤ ─ │ ▼ ▶ ● ◯
+  ▮ ░`), labeled arrows, ≤ ~60 cols, wrapped in a ``` code fence.
+- **Prose above the diagram** explaining what it shows.
+- **Update the right doc.** Pipeline/search changes →
+  `docs/RESEARCH_PIPELINE.md` (algorithm catalog + tuning-knobs table
+  too). New UI states → diagram in the component header or
+  `docs/RESEARCH_PIPELINE.md`.
+- **Real file references.** Cite actual paths; verify they exist.
+- **No stale info.** No dates, no version-pinned notes.
+
+## Complements, doesn't duplicate
+
+The `quality-coding` rule says "pipeline touches → docs updated." This
+rule adds the **diagram** requirement on top — a prose-only docs update
+is not enough for flow changes.
+
+## When it does NOT apply
+
+- Pure refactor with no behavior change (no new flow/stage).
+- Bug fix that doesn't alter the visible flow.
+- Adding a tuning knob value (update the tuning table, no diagram needed).
+- Test-only changes.
+
+When in doubt, add the diagram — it's cheap and it helps.

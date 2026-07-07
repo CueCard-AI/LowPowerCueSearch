@@ -8,6 +8,7 @@ import computeSimilarity from '@/lib/utils/computeSimilarity';
 import z from 'zod';
 import Scraper from '@/lib/scraper';
 import { splitText } from '@/lib/utils/splitText';
+import reranker from '@/lib/reranker';
 
 export const executeSearch = async (input: {
   queries: string[];
@@ -45,33 +46,38 @@ export const executeSearch = async (input: {
         ...(input.searchConfig ? input.searchConfig : {}),
       });
 
+      const cappedResults = res.results.slice(0, 20);
+
       let resultChunks: Chunk[] = [];
 
       try {
         const queryEmbedding = (await input.embedding.embedText([q]))[0];
 
-        resultChunks = (
-          await Promise.all(
-            res.results.map(async (r) => {
-              const content = r.content || r.title;
-              const chunkEmbedding = (
-                await input.embedding.embedText([content])
-              )[0];
+        const contents = cappedResults.map((r) => r.content || r.title);
+        const chunkEmbeddings =
+          await input.embedding.embedText(contents);
 
-              return {
-                content,
-                metadata: {
-                  title: r.title,
-                  url: r.url,
-                  similarity: computeSimilarity(queryEmbedding, chunkEmbedding),
-                  embedding: chunkEmbedding,
-                },
-              };
-            }),
-          )
-        ).filter((c) => c.metadata.similarity > 0.5);
+        resultChunks = cappedResults
+          .map((r, i) => {
+            const content = contents[i];
+            const chunkEmbedding = chunkEmbeddings[i];
+
+            return {
+              content,
+              metadata: {
+                title: r.title,
+                url: r.url,
+                similarity: computeSimilarity(
+                  queryEmbedding,
+                  chunkEmbedding,
+                ),
+                embedding: chunkEmbedding,
+              },
+            };
+          })
+          .filter((c) => c.metadata.similarity > 0.5);
       } catch (err) {
-        resultChunks = res.results.map((r) => {
+        resultChunks = cappedResults.map((r) => {
           const content = r.content || r.title;
 
           return {
@@ -157,7 +163,7 @@ export const executeSearch = async (input: {
       }
     }
 
-    const uniqueSearchResults = Array.from(uniqueSearchResultIndices.keys())
+    let uniqueSearchResults = Array.from(uniqueSearchResultIndices.keys())
       .map((i) => {
         const uniqueResult = results[i];
 
@@ -165,8 +171,116 @@ export const executeSearch = async (input: {
         delete uniqueResult.metadata.similarity;
 
         return uniqueResult;
-      })
-      .slice(0, 20);
+      });
+
+    // Domain diversity: cap at 2 results per hostname so one site can't dominate.
+    const hostCount: Record<string, number> = {};
+    uniqueSearchResults = uniqueSearchResults.filter((r) => {
+      try {
+        const host = new URL(r.metadata.url).hostname;
+        hostCount[host] = (hostCount[host] || 0) + 1;
+        return hostCount[host] <= 2;
+      } catch {
+        return true;
+      }
+    });
+
+    uniqueSearchResults = uniqueSearchResults.slice(0, 20);
+
+    // Rerank: local CPU cross-encoder (primary) with LLM-as-judge fallback.
+    // The Reranker singleton loads the bundled MiniLM cross-encoder at startup
+    // and scores ~20 query/doc pairs in ~200-600ms (5-10x faster than the LLM
+    // rerank, cross-encoder-grade relevance). If it isn't ready or errors, it
+    // delegates to the LLM-as-judge rerank. See src/lib/reranker/index.ts and
+    // docs/RESEARCH_LOG.md (S1).
+    if (uniqueSearchResults.length > 3) {
+      try {
+        uniqueSearchResults = await reranker.rerank(
+          input.queries.join(' '),
+          uniqueSearchResults,
+          input.llm,
+        );
+      } catch (err) {
+        console.log('Reranking failed, keeping similarity order:', err);
+      }
+    }
+
+    if (input.mode === 'balanced' && uniqueSearchResults.length > 0) {
+      const topToScrape = uniqueSearchResults.slice(0, 3);
+
+      researchBlock.data.subSteps.push({
+        id: crypto.randomUUID(),
+        type: 'reading',
+        reading: topToScrape,
+      });
+
+      input.session.updateBlock(researchBlock.id, [
+        {
+          op: 'replace',
+          path: '/data/subSteps',
+          value: researchBlock.data.subSteps,
+        },
+      ]);
+
+      // Snippet-level evidence retrieval: scrape each page, split into passages,
+      // embed, and keep only the top 3 passages most relevant to the query.
+      // Gives the writer precise evidence instead of a raw 4000-char dump.
+      const relevanceEmbedding = (
+        await input.embedding.embedText([input.queries.join(' ')])
+      )[0];
+
+      await Promise.all(
+        topToScrape.map(async (r) => {
+          try {
+            const scrapedData = await Scraper.scrape(r.metadata.url);
+            if (!scrapedData?.content) return;
+
+            const passages = splitText(scrapedData.content, 500, 50);
+            if (passages.length === 0) {
+              r.content = scrapedData.content.slice(0, 4000);
+              return;
+            }
+
+            const passageEmbeddings =
+              await input.embedding.embedText(passages);
+
+            const topPassages = passages
+              .map((p, i) => ({
+                p,
+                sim: computeSimilarity(relevanceEmbedding, passageEmbeddings[i]),
+              }))
+              .sort((a, b) => b.sim - a.sim)
+              .slice(0, 3)
+              .map((x) => x.p);
+
+            r.content = topPassages.join('\n\n');
+          } catch (err) {
+            console.log('Error scraping', r.metadata.url, err);
+          }
+        }),
+      );
+    }
+
+    // S9 — cross-encoder snippet compression for speed mode. Reuse the
+    // already-loaded cross-encoder to keep only the top 2 query-relevant
+    // sentences per snippet for the top 10 results. Drops nav/metadata/ad
+    // noise so the writer gets high-signal spans (the Perplexity query-aware
+    // context-compression technique). No LLM call; ~CPU. Balanced already
+    // scrapes+extracts, so this is speed-mode-only. See docs/RESEARCH_LOG.md
+    // (S9).
+    if (input.mode === 'speed' && uniqueSearchResults.length > 0) {
+      const topToCompress = uniqueSearchResults.slice(0, 10);
+      const compressed = await reranker.compress(
+        input.queries.join(' '),
+        topToCompress.map((r) => ({
+          content: r.content || r.metadata?.title || '',
+        })),
+        2,
+      );
+      topToCompress.forEach((r, i) => {
+        if (compressed[i]) r.content = compressed[i];
+      });
+    }
 
     return uniqueSearchResults;
   } else if (input.mode === 'quality') {
@@ -180,9 +294,11 @@ export const executeSearch = async (input: {
         ...(input.searchConfig ? input.searchConfig : {}),
       });
 
+      const cappedResults = res.results.slice(0, 20);
+
       let resultChunks: Chunk[] = [];
 
-      resultChunks = res.results.map((r) => {
+      resultChunks = cappedResults.map((r) => {
         const content = r.content || r.title;
 
         return {

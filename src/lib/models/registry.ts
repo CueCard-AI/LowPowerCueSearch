@@ -91,6 +91,35 @@ class ModelRegistry {
     return model;
   }
 
+  async loadChatModelByType(providerType: string, modelName: string) {
+    const provider = this.activeProviders.find((p) => p.type === providerType);
+
+    if (!provider)
+      throw new Error(
+        `No configured provider of type "${providerType}" found for chat model "${modelName}"`,
+      );
+
+    const model = await provider.provider.loadChatModel(modelName);
+
+    return model;
+  }
+
+  async loadEmbeddingModelByType(
+    providerType: string,
+    modelName: string,
+  ) {
+    const provider = this.activeProviders.find((p) => p.type === providerType);
+
+    if (!provider)
+      throw new Error(
+        `No configured provider of type "${providerType}" found for embedding model "${modelName}"`,
+      );
+
+    const model = await provider.provider.loadEmbeddingModel(modelName);
+
+    return model;
+  }
+
   async addProvider(
     type: string,
     name: string,
