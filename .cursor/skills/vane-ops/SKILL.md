@@ -112,6 +112,37 @@ The hash is `sha256(JSON.stringify(config, Object.keys(config).sort()))`
 (`src/lib/utils/hash.ts`). It's used for provider dedup; a stale hash won't
 block load but should be recomputed for correctness.
 
+## Local models (reranker + embedder)
+
+Two transformers.js models ship bundled in the image and prewarm at startup
+(see `docs/LOCAL_MODELS.md` for the full reference). Quick ops:
+
+```bash
+# Confirm both models prewarmed at startup
+docker logs vane 2>&1 | grep -E "reranker: model loaded|local-embedder: loaded"
+
+# Confirm the weights are bundled
+docker run --rm vane-glm sh -c "ls -la /home/vane/models/reranker/onnx/model.onnx /home/vane/models/embedder/onnx/model.onnx"
+
+# Isolated embedder smoke test (no SearxNG needed) — expect dim 384, cos > 0.5
+docker exec vane node -e '
+(async () => {
+  const { pipeline, env } = await import("@huggingface/transformers");
+  env.allowRemoteModels = false;
+  const p = await pipeline("feature-extraction", "/home/vane/models/embedder", { dtype: "fp32" });
+  const a = await p(["ceo of anthropic"], { pooling: "mean", normalize: true });
+  const b = await p(["anthropic chief executive"], { pooling: "mean", normalize: true });
+  const va=a.tolist()[0], vb=b.tolist()[0];
+  console.log("dim", va.length, "cos", va.reduce((s,x,i)=>s+x*vb[i],0).toFixed(3));
+})();'
+```
+
+Scope reminder: the **cross-encoder reranker** runs in all search modes
+(chat + enrich). The **local embedder** is `/api/enrich`-only; chat/search
+keep Gemini embeddings so the uploads feature stays dimensionally consistent.
+If you see `rerank: llm-fallback` in logs, the cross-encoder didn't load —
+check the startup log for a bundle/load error.
+
 ## Keys are secret
 
 If a key was pasted in plain text in any chat, treat it as compromised and

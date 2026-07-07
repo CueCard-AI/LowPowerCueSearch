@@ -20,6 +20,7 @@ Anything is one click away.
 | [RESEARCH_LOG.md](RESEARCH_LOG.md) | Living research log + speed/quality roadmap (papers, ideas, statuses, iteration plan, experiment log) |
 | [SCALE_AND_DEPLOYMENT.md](SCALE_AND_DEPLOYMENT.md) | Production architecture, K8s topology, SearxNG proxy pool, sizing, cost — scaling `/api/enrich` to 1000 leads/10 min |
 | [SCALING_STEPS.md](SCALING_STEPS.md) | Extremely detailed step-by-step build plan (phases 0–4, per-step files/commands/verification/done-criteria) for the scaling effort |
+| [LOCAL_MODELS.md](LOCAL_MODELS.md) | Cross-encoder reranker (all modes) + local embedder (`/api/enrich` only) — bundling, singletons, prewarm, fallbacks, perf |
 | [architecture/README.md](architecture/README.md) | Upstream Vane architecture overview (key components) |
 | [architecture/WORKING.md](architecture/WORKING.md) | Upstream high-level flow |
 | [API/SEARCH.md](API/SEARCH.md) | Programmatic search API (`POST /api/search`) |
@@ -59,6 +60,7 @@ Anything is one click away.
 | Modify the search pipeline | [RESEARCH_PIPELINE.md](RESEARCH_PIPELINE.md) + the `ml-search-pipeline` skill |
 | Plan the next speed/quality improvement | [RESEARCH_LOG.md](RESEARCH_LOG.md) (ideas, papers, statuses, iteration plan) |
 | Add a model provider | `src/lib/models/providers/` + the `glm-provider` rule |
+| Understand local models (reranker + embedder) | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
 | Use the API (search vs enrich vs chat) | [API/ENRICH.md](API/ENRICH.md) §0 + [API/SEARCH.md](API/SEARCH.md) |
 | Tune SearxNG | [searxng/settings.yml](../searxng/settings.yml) + the `searxng` rule |
 | Write/fix docs | the `documentation` skill + the `documentation` rule |
