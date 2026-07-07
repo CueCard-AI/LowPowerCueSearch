@@ -23,6 +23,7 @@ Anything is one click away.
 | [architecture/README.md](architecture/README.md) | Upstream Vane architecture overview (key components) |
 | [architecture/WORKING.md](architecture/WORKING.md) | Upstream high-level flow |
 | [API/SEARCH.md](API/SEARCH.md) | Programmatic search API (`POST /api/search`) |
+| [API/ENRICH.md](API/ENRICH.md) | Lead enrichment API (`POST /api/enrich`) — request/response, streaming, citations map, UI transpose |
 | [installation/UPDATING.md](installation/UPDATING.md) | Updating the app |
 
 ## .cursor/skills/ (auto-load in Cursor)
@@ -58,6 +59,7 @@ Anything is one click away.
 | Modify the search pipeline | [RESEARCH_PIPELINE.md](RESEARCH_PIPELINE.md) + the `ml-search-pipeline` skill |
 | Plan the next speed/quality improvement | [RESEARCH_LOG.md](RESEARCH_LOG.md) (ideas, papers, statuses, iteration plan) |
 | Add a model provider | `src/lib/models/providers/` + the `glm-provider` rule |
+| Use the API (search vs enrich vs chat) | [API/ENRICH.md](API/ENRICH.md) §0 + [API/SEARCH.md](API/SEARCH.md) |
 | Tune SearxNG | [searxng/settings.yml](../searxng/settings.yml) + the `searxng` rule |
 | Write/fix docs | the `documentation` skill + the `documentation` rule |
 | Ship a change | [CONTRIBUTING.md](../CONTRIBUTING.md) before-you-ship checklist |

@@ -1,5 +1,9 @@
 # Vane Search API Documentation
 
+> **Looking for lead enrichment?** See [`ENRICH.md`](./ENRICH.md) for the
+> `/api/enrich` endpoint (company in → cited, sourced answer + `citations`
+> map out). `/api/search` (below) is the general programmatic Q&A endpoint.
+
 ## Overview
 
 Vane's Search API makes it easy to use our AI-powered search engine. You can run different types of searches, pick the models you want to use, and get the most recent info. Follow the following headings to learn more about Vane's search API.

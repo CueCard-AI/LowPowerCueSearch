@@ -165,6 +165,7 @@ regression — see the `zero-cost-constraint` rule in
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operational runbook: build/swap/verify, log decoding, incidents |
 | [docs/SCALE_AND_DEPLOYMENT.md](docs/SCALE_AND_DEPLOYMENT.md) | Production architecture, K8s topology, sizing, cost — scaling `/api/enrich` to 1000 leads/10 min |
 | [docs/SCALING_STEPS.md](docs/SCALING_STEPS.md) | Step-by-step build plan for the scaling effort (phases 0–4, per-step files/commands/verification) |
+| [docs/API/ENRICH.md](docs/API/ENRICH.md) | Lead enrichment API (`POST /api/enrich`) — full request/response, streaming, citations map, UI transpose |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: conventions, skills/rules, before-you-ship checklist |
 | [docs/architecture/README.md](docs/architecture/README.md) | Upstream Vane architecture overview |
 | [docs/API/SEARCH.md](docs/API/SEARCH.md) | Programmatic search API |
